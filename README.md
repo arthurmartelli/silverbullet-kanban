@@ -19,8 +19,8 @@ ${kanban.board()}
 - [x] Tag the release
 ```
 
-On a card, the checkbox checks the task, and the arrows move it, sub-items
-included, to the end of the previous or next column.
+On a card, the checkbox checks the task, and the `<` and `>` buttons move it,
+sub-items included, to the end of the previous or next column.
 `${kanban.board("Some/Page")}` shows another page's board, and the
 `Kanban: Insert Board` command inserts the expression at the cursor.
 
