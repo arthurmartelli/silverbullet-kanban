@@ -24,6 +24,14 @@ sub-items included, to the end of the previous or next column.
 `${kanban.board("Some/Page")}` shows another page's board, and the
 `Kanban: Insert Board` command inserts the expression at the cursor.
 
+The `-` and `+` buttons on a column fold and unfold it down to its title and
+card count, until the app reloads. To have sections start folded each time the
+page opens, name them:
+
+```markdown
+${kanban.board{ folded = {"Ideas", "Chores"} }}
+```
+
 ## Install
 
 Run `Library: Install` in SilverBullet with this URI:

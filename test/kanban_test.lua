@@ -81,6 +81,10 @@ local toggled = kanban.toggled(page, 1, 2)
 check("toggle checks a card", kanban.parse(toggled).columns[1].cards[2].done)
 check("toggle twice restores the page", kanban.toggled(toggled, 1, 2) == page)
 
+check("named columns start folded", kanban.startsFolded({ "Ideas", "Done" }, "Done"))
+check("other columns start unfolded", not kanban.startsFolded({ "Ideas" }, "Doing"))
+check("no folded list folds nothing", not kanban.startsFolded(nil, "Doing"))
+
 if failures > 0 then
   print(failures .. " failed")
   os.exit(1)

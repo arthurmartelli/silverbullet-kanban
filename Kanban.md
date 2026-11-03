@@ -26,6 +26,15 @@ ${kanban.board()}
 Or show another page's board with `${kanban.board("Projects/Board")}`. The
 `Kanban: Insert Board` command inserts the expression at the cursor.
 
+The `-` and `+` buttons on a column fold and unfold it down to its title and
+card count, until the app reloads. To have sections start folded each time the
+page opens, name them, optionally with the page:
+
+```markdown
+${kanban.board{ folded = {"Ideas", "Chores"} }}
+${kanban.board{ page = "Projects/Board", folded = {"Ideas"} }}
+```
+
 On a card, the checkbox checks the task, and the `<` and `>` buttons move it to the end of
 the previous or next column, sub-items included. A heading of another level,
 or a `%%` comment, ends the board, so notes can follow it.
@@ -123,6 +132,14 @@ function kanban.moved(text, fromColumn, cardIndex, toColumn)
   return table.concat(out, "\n")
 end
 
+--- Whether a column starts folded, given the titles configured to.
+function kanban.startsFolded(folded, title)
+  for _, name in ipairs(folded or {}) do
+    if name == title then return true end
+  end
+  return false
+end
+
 --- The page's text with a card checked or unchecked.
 function kanban.toggled(text, column, cardIndex)
   local board = kanban.parse(text)
@@ -142,9 +159,14 @@ SilverBullet 2 release's `dom` accepts: older ones take no lists of children,
 ```space-lua
 -- priority: 5
 
+-- Columns folded or unfolded by hand, which outlive the board's redraws.
+kanban.folds = kanban.folds or {}
+
 --- The board of a page, the current one when no name is given.
----@param pageName string? Page whose sections become the columns.
-function kanban.board(pageName)
+---@param options string|table? A page name, or `page` and `folded`, the section titles that start folded.
+function kanban.board(options)
+  if type(options) ~= "table" then options = { page = options } end
+  local pageName = options.page
   return widget.new {
     refreshOn = { "edit", "index" },
     content = function()
@@ -165,12 +187,29 @@ function kanban.board(pageName)
       local board = kanban.parse(read())
       local columns = { class = "kb-board" }
       for ci, column in ipairs(board.columns) do
+        local foldKey = page .. "\n" .. column.title
+        local folded = kanban.folds[foldKey]
+        if folded == nil then folded = kanban.startsFolded(options.folded, column.title) end
+        local node, foldButton
+        foldButton = dom.button {
+          class = "kb-fold",
+          title = folded and "Unfold" or "Fold",
+          onclick = function()
+            local now = not node.classList.contains("kb-folded")
+            kanban.folds[foldKey] = now
+            node.classList.toggle("kb-folded")
+            foldButton.textContent = now and "+" or "-"
+            foldButton.title = now and "Unfold" or "Fold"
+          end,
+          __rawText = folded and "+" or "-",
+        }
         local element = {
-          class = "kb-column",
+          class = folded and "kb-column kb-folded" or "kb-column",
           dom.div {
             class = "kb-title",
-            dom.span { __rawText = column.title },
+            dom.span { class = "kb-name", __rawText = column.title },
             dom.span { class = "kb-count", __rawText = tostring(#column.cards) },
+            foldButton,
           },
         }
         for ki, card in ipairs(column.cards) do
@@ -211,7 +250,8 @@ function kanban.board(pageName)
         if #column.cards == 0 then
           table.insert(element, dom.div { class = "kb-empty", __rawText = "No cards" })
         end
-        table.insert(columns, dom.div(element))
+        node = dom.div(element)
+        table.insert(columns, node)
       end
       if #board.columns == 0 then
         return "*No `##` sections to make columns from.*"
@@ -248,9 +288,34 @@ command.define {
 }
 .kb-title {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
   font-weight: 600;
   padding: 0.125rem 0.25rem 0.5rem;
+}
+.kb-name {
+  margin-right: auto;
+}
+.kb-fold {
+  border: none;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  padding: 0 0.25rem;
+}
+.kb-fold:hover {
+  opacity: 1;
+}
+.kb-folded {
+  flex: 0 0 auto;
+}
+.kb-folded .kb-title {
+  padding-bottom: 0.125rem;
+}
+.kb-folded .kb-card,
+.kb-folded .kb-empty {
+  display: none;
 }
 .kb-count {
   opacity: 0.6;
