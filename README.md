@@ -19,17 +19,27 @@ ${kanban.board()}
 - [x] Tag the release
 ```
 
-On a card, the checkbox checks the task, and the `<` and `>` buttons move it,
-sub-items included, to the end of the previous or next column.
-`${kanban.board("Some/Page")}` shows another page's board, and the
-`Kanban: Insert Board` command inserts the expression at the cursor.
+Drag a card to reorder it or move it to another list, sub-items included, and
+drag a list by its title to reorder the lists; on a touch screen, drag by the
+grip. `+ Add a card` adds a card to a list, and the `⋮` menus edit, check, move,
+insert, duplicate, delete, and rename. `${kanban.board("Some/Page")}` shows
+another page's board, and the `Kanban: Insert Board` command inserts the
+expression at the cursor.
 
-The `-` and `+` buttons on a column fold and unfold it down to its title and
-card count, until the app reloads. To have sections start folded each time the
-page opens, name them:
+The chevron on a list folds it to a narrow strip with its title and card count,
+until the app reloads. To have lists start folded each time the page opens, name
+them in the page's frontmatter, or on the board with `folded`:
+
+```yaml
+---
+kanban.folded: [Ideas, Chores]
+---
+```
+
+Pass `checkboxes = true` to check cards from a box on each:
 
 ```markdown
-${kanban.board{ folded = {"Ideas", "Chores"} }}
+${kanban.board{ checkboxes = true }}
 ```
 
 ## Install

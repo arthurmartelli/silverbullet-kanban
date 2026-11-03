@@ -84,6 +84,61 @@ check("toggle twice restores the page", kanban.toggled(toggled, 1, 2) == page)
 check("named columns start folded", kanban.startsFolded({ "Ideas", "Done" }, "Done"))
 check("other columns start unfolded", not kanban.startsFolded({ "Ideas" }, "Doing"))
 check("no folded list folds nothing", not kanban.startsFolded(nil, "Doing"))
+check("a single title folds", kanban.startsFolded("Doing", "Doing") and not kanban.startsFolded("Doing", "Ideas"))
+check("anything else folds nothing", not kanban.startsFolded(true, "Doing"))
+
+local top = kanban.moved(page, 1, 2, 1, 1)
+check("move to the top of a column", kanban.parse(top).columns[1].cards[1].label:find("Second idea", 1, true) ~= nil)
+check("move to the top keeps every line", sortedLines(top) == sortedLines(page))
+check("move to a column's end by default", kanban.parse(kanban.moved(top, 1, 1, 1)) .columns[1].cards[2].label:find("Second idea", 1, true) ~= nil)
+local between = kanban.parse(kanban.moved(page, 2, 1, 1, 2)).columns[1].cards
+check("move between cards, with its sub-items", #between == 3 and between[2].label == "Working on [[Some Page]]"
+  and #between[2].body == 2 and between[3].label:find("Second idea", 1, true) ~= nil)
+
+local added = kanban.parse(kanban.added(page, 1, "New")).columns[1].cards
+check("add at a column's end", #added == 3 and added[3].label == "New" and not added[3].done)
+local inserted = kanban.parse(kanban.added(page, 1, "New", 1)).columns[1].cards
+check("add at a position", inserted[1].label == "New" and inserted[2].label == "First idea")
+local into = kanban.added(page, 3, "New")
+check("add to an empty column", kanban.parse(into).columns[3].cards[1].label == "New"
+  and into:find("## Empty\n\n- [ ] New\n\n## Done", 1, true) ~= nil)
+
+local edited = kanban.parse(kanban.edited(page, 4, 1, "Renamed")).columns[4].cards[1]
+check("edit keeps the mark", edited.label == "Renamed" and edited.done)
+local editedBody = kanban.parse(kanban.edited(page, 2, 1, "Renamed")).columns[2].cards[1]
+check("edit keeps the sub-items", #editedBody.body == 2)
+check("edit keeps odd characters", kanban.parse(kanban.edited(page, 1, 1, "100% %1 [x]")).columns[1].cards[1].label == "100% %1 [x]")
+
+local copies = kanban.parse(kanban.duplicated(page, 2, 1)).columns[2].cards
+check("duplicate comes right after, with its sub-items", #copies == 2 and copies[2].label == copies[1].label and #copies[2].body == 2)
+local removed = kanban.removed(page, 2, 1)
+check("delete a card and its sub-items", #kanban.parse(removed).columns[2].cards == 0
+  and not removed:find("A sub-item", 1, true))
+
+local reordered = kanban.columnMoved(page, 1, 3)
+local titles = kanban.parse(reordered).columns
+check("move a column", titles[1].title == "Doing" and titles[2].title == "Empty" and titles[3].title == "Ideas" and titles[4].title == "Done")
+check("a moved column keeps its cards", #titles[3].cards == 2)
+check("moving a column keeps every line", sortedLines(reordered) == sortedLines(page))
+check("move a column back restores the page", kanban.columnMoved(reordered, 3, 1) == page)
+local toEnd = kanban.columnMoved(page, 2, 4)
+local ends = kanban.parse(toEnd).columns
+check("move a column to the end stays above what follows the board", ends[4].title == "Doing"
+  and toEnd:find("Another, indented with spaces\n\n# Notes", 1, true) ~= nil and #ends[4].cards == 1)
+check("that keeps every line", sortedLines(toEnd) == sortedLines(page))
+check("what follows the board stays off it", not toEnd:find("# Notes\n\n## ", 1, true))
+
+local plain = "## A\n\n- [ ] a\n\n## B\n\n- [ ] b"
+check("move the last column first at the page's end", kanban.columnMoved(plain, 2, 1) == "## B\n\n- [ ] b\n\n## A\n\n- [ ] a\n")
+
+local lists = kanban.parse(kanban.columnAdded(page, "New", 2)).columns
+check("add a column before another", #lists == 5 and lists[2].title == "New" and lists[3].title == "Doing")
+local appendedList = kanban.columnAdded(page, "New")
+check("add a column after the last, above what follows", appendedList:find("## New\n\n# Notes", 1, true) ~= nil)
+check("rename a column", kanban.parse(kanban.columnRenamed(page, 1, "Later")).columns[1].title == "Later")
+local noLoose = kanban.columnRemoved(page, 4)
+check("delete a column with its section", #kanban.parse(noLoose).columns == 3
+  and not noLoose:find("Loose text", 1, true) and noLoose:find("# Notes", 1, true) ~= nil)
 
 if failures > 0 then
   print(failures .. " failed")
