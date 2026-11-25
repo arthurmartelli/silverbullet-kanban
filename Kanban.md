@@ -2,59 +2,13 @@
 name: Library/arthurmartelli/Kanban
 tags: meta/library
 ---
-A Kanban board drawn from a plain Markdown page: each `##` section is a
-column, and each top-level task under it, with its indented lines, is a card.
-The page stays ordinary Markdown, so it reads and edits as before, with or
-without the board.
 
 # Usage
-Put the board on the page it shows, for instance below the frontmatter:
 
-```markdown
-${kanban.board()}
-
-## Doing
-
-- [ ] Write the release notes
-	- Check the changelog first
-
-## Done
-
-- [x] Tag the release
-```
-
-Or show another page's board with `${kanban.board("Projects/Board")}`. The
-`Kanban: Insert Board` command inserts the expression at the cursor.
-
-The chevron on a list folds it to a narrow strip with its title and card count,
-until the app reloads. To have lists start folded each time the page opens,
-name them in the frontmatter of the page they're on:
-
-```yaml
----
-kanban.folded: [Ideas, Chores]
----
-```
-
-Or name them on the board itself, which suits a board of another page:
-
-```markdown
-${kanban.board{ page = "Projects/Board", folded = {"Ideas"} }}
-```
-
-Drag a card to reorder it or move it to another list, sub-items included, and
-drag a list by its title to reorder the lists. On a touch screen, drag by the
-grip. `+ Add a card` adds a card at the end of a list. The `⋮` menu on a card
-edits, checks, moves, inserts next to, duplicates, or deletes it; the one on a
-list renames, inserts next to, or deletes it.
-
-Checked cards are struck through. To check them from a box on each card, pass
-`checkboxes = true`.
-
-A heading of another level, or a `%%` comment, ends the board, so notes can
-follow it.
+See the [README](https://github.com/arthurmartelli/silverbullet-kanban).
 
 # Text logic
+
 ```space-lua
 -- priority: 10
 -- The board's text logic: a page's ## sections are columns, and each
@@ -170,9 +124,9 @@ function kanban.moved(text, fromColumn, cardIndex, toColumn, position)
   return withCardLines(withoutCard(board, card), toColumn, position, cardLines)
 end
 
---- The page's text with a new card at a position of a column, or at its end.
-function kanban.added(text, column, label, position)
-  return withCardLines(text, column, position, { "- [ ] " .. label })
+--- The page's text with a new card at the end of a column.
+function kanban.added(text, column, label)
+  return withCardLines(text, column, nil, { "- [ ] " .. label })
 end
 
 --- The page's text with a card's first line relabelled.
@@ -182,13 +136,6 @@ function kanban.edited(text, column, cardIndex, label)
   local first = board.columns[column].cards[cardIndex].first
   lines[first] = string.match(lines[first], "^[-*] %[[ xX]%] ?") .. label
   return table.concat(lines, "\n")
-end
-
---- The page's text with a copy of a card right after it.
-function kanban.duplicated(text, column, cardIndex)
-  local board = kanban.parse(text)
-  local card = board.columns[column].cards[cardIndex]
-  return withCardLines(text, column, cardIndex + 1, slice(board.lines, card.first, card.last))
 end
 
 --- The page's text without a card.
@@ -241,11 +188,9 @@ function kanban.columnRemoved(text, column)
   return withoutSection(kanban.parse(text), column)
 end
 
---- Whether a column starts folded, given the title or titles configured to.
+--- Whether a column starts folded, given the titles configured to.
 function kanban.startsFolded(folded, title)
-  if type(folded) == "string" then folded = { folded } end
-  if type(folded) ~= "table" then return false end
-  for _, name in ipairs(folded) do
+  for _, name in ipairs(folded or {}) do
     if name == title then return true end
   end
   return false
@@ -346,16 +291,6 @@ local function draggable(handle, node, scroller, over, drop)
   handle.addEventListener("pointercancel", finish)
 end
 
--- The class marking a drop spot on one node at a time.
-local function marker()
-  local node, class
-  return function(newNode, newClass)
-    if node then node.classList.remove(class) end
-    node, class = newNode, newClass
-    if node then node.classList.add(class) end
-  end
-end
-
 --- The board of a page, the current one when no name is given.
 ---@param options string|table? A page name, or `page`, `folded`, the section titles that start folded, and `checkboxes`, whether cards show a box to check them.
 function kanban.board(options)
@@ -384,9 +319,9 @@ function kanban.board(options)
         return "*No `##` sections to make columns from.*"
       end
 
-      local function askCard(ci, position)
+      local function askCard(ci)
         local label = editor.prompt("New card in " .. board.columns[ci].title .. ":")
-        if given(label) then write(kanban.added(read(), ci, label, position)) end
+        if given(label) then write(kanban.added(read(), ci, label)) end
       end
       local function askColumn(position)
         local title = editor.prompt("New list:")
@@ -413,11 +348,6 @@ function kanban.board(options)
             end })
           end
         end
-        table.insert(items, { name = "Insert card before", run = function() askCard(ci, ki) end })
-        table.insert(items, { name = "Insert card after", run = function() askCard(ci, ki + 1) end })
-        table.insert(items, { name = "Duplicate card", run = function()
-          write(kanban.duplicated(read(), ci, ki))
-        end })
         table.insert(items, { name = "Delete card", run = function()
           if editor.confirm("Delete this card?\n\n" .. card.label) then
             write(kanban.removed(read(), ci, ki))
@@ -436,18 +366,11 @@ function kanban.board(options)
           { name = "Insert list before", run = function() askColumn(ci) end },
           { name = "Insert list after", run = function() askColumn(ci + 1) end },
           { name = "Delete list", run = function()
-            local cards = #column.cards == 1 and "1 card" or #column.cards .. " cards"
-            if editor.confirm("Delete " .. column.title .. " and its " .. cards .. "?") then
+            if editor.confirm("Delete the list " .. column.title .. " and all its cards?") then
               write(kanban.columnRemoved(read(), ci))
             end
           end },
         })
-      end
-
-      local attributes = index.extractFrontmatter(text).frontmatter
-      local pageFolded = attributes["kanban.folded"]
-      if pageFolded == nil and type(attributes.kanban) == "table" then
-        pageFolded = attributes.kanban.folded
       end
 
       local columns = { class = "kb-board" }
@@ -455,10 +378,7 @@ function kanban.board(options)
       for ci, column in ipairs(board.columns) do
         local foldKey = page .. "\n" .. column.title
         local folded = kanban.folds[foldKey]
-        if folded == nil then
-          folded = kanban.startsFolded(options.folded, column.title)
-            or kanban.startsFolded(pageFolded, column.title)
-        end
+        if folded == nil then folded = kanban.startsFolded(options.folded, column.title) end
         local node, foldButton
         foldButton = dom.button {
           class = "kb-fold",
@@ -533,7 +453,13 @@ function kanban.board(options)
       end
       local boardNode = dom.div(columns)
 
-      local mark = marker()
+      -- Marks the drop spot, one node at a time.
+      local marked, markedClass
+      local function mark(node, class)
+        if marked then marked.classList.remove(markedClass) end
+        marked, markedClass = node, class
+        if node then node.classList.add(class) end
+      end
       -- The card position under the pointer in a list, counted without the
       -- dragged card, and the card it goes before.
       local function cardSpot(view, dragged, y)
@@ -622,14 +548,18 @@ command.define {
   border: 1px solid var(--panel-border-color);
   border-radius: 8px;
 }
-.kb-title {
+.kb-title,
+.kb-card {
   display: flex;
-  align-items: center;
   gap: 0.375rem;
+  cursor: grab;
+  user-select: none;
+}
+.kb-title {
+  align-items: center;
   padding: 0.375rem 0.5rem;
   border-bottom: 1px solid var(--panel-border-color);
   margin-bottom: 0.5rem;
-  user-select: none;
 }
 .kb-name {
   flex: 1;
@@ -643,62 +573,52 @@ command.define {
 }
 .kb-grip {
   flex: none;
-  width: 8px;
-  height: 14px;
   opacity: 0.45;
-  cursor: grab;
   touch-action: none;
-  background-image: radial-gradient(currentColor 1px, transparent 1.25px);
-  background-size: 4px 4px;
 }
-.kb-title,
-.kb-card {
-  cursor: grab;
+/* The board's buttons drop the editor's button look. */
+.kb-fold,
+.kb-menu,
+.kb-check,
+.kb-add {
+  flex: none;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.kb-fold,
+.kb-menu,
+.kb-add {
+  opacity: 0.6;
+}
+.kb-fold:hover,
+.kb-menu:hover,
+.kb-add:hover {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 10%, transparent);
 }
 .kb-fold,
 .kb-menu {
-  flex: none;
   width: 1.25rem;
   height: 1.25rem;
-  padding: 0;
-  border: none;
   border-radius: 4px;
-  background: transparent;
-  color: inherit;
-  opacity: 0.6;
-  cursor: pointer;
-  position: relative;
+  font: inherit;
+  line-height: 1;
 }
-.kb-fold:hover,
-.kb-menu:hover {
-  opacity: 1;
-  background: color-mix(in srgb, currentColor 12%, transparent);
+/* After the slash, the icons' empty alternative text, so the buttons' titles name them. */
+.kb-grip::before {
+  content: "⠿" / "";
 }
 .kb-fold::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 0.4rem;
-  height: 0.4rem;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: translate(-50%, -70%) rotate(45deg);
+  content: "▾" / "";
 }
 .kb-folded .kb-fold::before {
-  transform: translate(-70%, -50%) rotate(-45deg);
+  content: "▸" / "";
 }
 .kb-menu::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 3px;
-  height: 3px;
-  margin: -1.5px;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 -5px currentColor, 0 5px currentColor;
+  content: "⋮" / "";
 }
 .kb-folded {
   flex: 0 0 auto;
@@ -724,21 +644,19 @@ command.define {
   display: none;
 }
 .kb-card {
-  display: flex;
   align-items: flex-start;
-  gap: 0.375rem;
   background: color-mix(in srgb, currentColor 6%, transparent);
   border-radius: 6px;
   padding: 0.375rem 0.25rem 0.375rem 0.5rem;
   margin: 0 0.5rem 0.5rem;
   font-size: 0.9em;
-  user-select: none;
 }
-.kb-card .kb-grip {
+.kb-check {
   margin-top: 0.25em;
 }
+/* A mouse drags from anywhere on a card or title; touch needs the grip. */
 @media (hover: hover) {
-  .kb-card .kb-grip {
+  .kb-grip {
     display: none;
   }
 }
@@ -760,15 +678,10 @@ command.define {
   opacity: 0.6;
 }
 .kb-check {
-  flex: none;
   width: 1em;
   height: 1em;
-  margin-top: 0.25em;
-  padding: 0;
   border: 1px solid currentColor;
   border-radius: 3px;
-  background: transparent;
-  cursor: pointer;
 }
 .kb-check[aria-checked="true"] {
   background: currentColor;
@@ -778,18 +691,9 @@ command.define {
   width: calc(100% - 1rem);
   margin: 0 0.5rem 0.5rem;
   padding: 0.375rem;
-  border: none;
   border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  opacity: 0.65;
   font: inherit;
   font-size: 0.85em;
-  cursor: pointer;
-}
-.kb-add:hover {
-  opacity: 1;
-  background: color-mix(in srgb, currentColor 8%, transparent);
 }
 .kb-dragging {
   opacity: 0.35;

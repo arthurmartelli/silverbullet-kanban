@@ -1,10 +1,11 @@
 # SilverBullet Kanban
 
-A Kanban board for [SilverBullet](https://silverbullet.md) 2, drawn from a
-plain Markdown page: each `##` section is a column, and each top-level task
-under it, with its indented lines, is a card. The page stays ordinary
-Markdown, so it reads and edits as before, with or without the board, and
-moves from Obsidian's Kanban plugin keep working.
+A Kanban board for [SilverBullet](https://silverbullet.md) 2, drawn from a plain Markdown page. Each `##` section is a column, and each top-level task under it, with its indented lines, is a card.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/board-dark.png">
+  <img alt="A board with the lists Ideas, Doing and Review, each holding cards, and a folded Done list" src="docs/board-light.png" width="784">
+</picture>
 
 ```markdown
 ${kanban.board()}
@@ -19,44 +20,30 @@ ${kanban.board()}
 - [x] Tag the release
 ```
 
-Drag a card to reorder it or move it to another list, sub-items included, and
-drag a list by its title to reorder the lists; on a touch screen, drag by the
-grip. `+ Add a card` adds a card to a list, and the `⋮` menus edit, check, move,
-insert, duplicate, delete, and rename. `${kanban.board("Some/Page")}` shows
-another page's board, and the `Kanban: Insert Board` command inserts the
-expression at the cursor.
+## Features
 
-The chevron on a list folds it to a narrow strip with its title and card count,
-until the app reloads. To have lists start folded each time the page opens, name
-them in the page's frontmatter, or on the board with `folded`:
-
-```yaml
----
-kanban.folded: [Ideas, Chores]
----
-```
-
-Pass `checkboxes = true` to check cards from a box on each:
-
-```markdown
-${kanban.board{ checkboxes = true }}
-```
+- Dragging cards, sub-items included, to reorder them or move them to another list, and dragging lists by their title.
+- Adding cards with `+ Add a card`, and a `⋮` menu on each card and list to edit, check, move, insert, rename, or delete.
+- Inserting kanban boards from other pages with `${kanban.board("Some/Page")}`.
+- Folding a list with its chevron. To have lists start folded, name them on the board: `${kanban.board{ folded = {"Ideas", "Chores"} }}`
+- Pass `${kanban.board{ checkboxes = true }}` to check cards from a box on each.
+- The `Kanban: Insert Board` command inserts a board at the cursor.
+- Note: a heading of another level or a `%%` comment ends the board, so notes can follow it.
 
 ## Install
 
-Run `Library: Install` in SilverBullet with this URI:
+Run `Library: Install` in SilverBullet with the URI, it installs to `Library/arthurmartelli/Kanban`:
 
 ```text
 github:arthurmartelli/silverbullet-kanban@main/Kanban.md
 ```
 
-It installs to `Library/arthurmartelli/Kanban`.
-
 ## Develop
 
-[Kanban.md](Kanban.md) is the whole library. Its first `space-lua` block holds
-the text logic, which the tests load and run with plain Lua 5.4:
+[Kanban.md](Kanban.md) is the whole library. Test via `lua test/kanban_test.lua` with Lua 5.3 or newer, or in a container with:
 
 ```sh
-lua test/kanban_test.lua
+podman run --rm --security-opt label=disable \
+  -v "$PWD":/src:ro -w /src \
+  docker.io/nickblah/lua:5.4-alpine lua test/kanban_test.lua
 ```

@@ -1,22 +1,44 @@
--- Tests the board's text logic, loaded from the first space-lua block in
--- Kanban.md, with plain Lua 5.4: lua test/kanban_test.lua
+-- Tests the board's text logic, loaded from the first space-lua block in Kanban.md.
+
 local f = assert(io.open("Kanban.md"))
-local page = f:read("a")
+local library = f:read("a")
 f:close()
-local logic = assert(page:match("```space%-lua\n(.-)\n```"), "no space-lua block")
+
+local logic = assert(library:match("```space%-lua\n(.-)\n```"), "no space-lua block")
 assert(load(logic, "Kanban.md"))()
 
 local failures = 0
-local function check(name, ok)
-  print((ok and "ok   " or "FAIL ") .. name)
-  if not ok then failures = failures + 1 end
+
+local function show(value)
+  return (tostring(value):gsub("\n", "\\n"):gsub("\t", "\\t"))
 end
 
-local function sortedLines(text)
-  local lines = {}
-  for line in text:gmatch("[^\n]+") do table.insert(lines, line) end
-  table.sort(lines)
-  return table.concat(lines, "\n")
+local function check(name, got, expected)
+  if got == expected then
+    print("ok   " .. name)
+    return
+  end
+  failures = failures + 1
+  print("FAIL " .. name .. "\n  expected: " .. show(expected) .. "\n  got:      " .. show(got))
+end
+
+-- A board in one line: "List: card, card | List:", where a checked card
+-- starts with [x] and +n counts its sub-item lines.
+local function outline(text)
+  local lists = {}
+  for _, column in ipairs(kanban.parse(text).columns) do
+    local cards = {}
+    for _, card in ipairs(column.cards) do
+      local label = card.label
+      if card.done then label = "[x] " .. label end
+      if #card.body > 0 then label = label .. "+" .. #card.body end
+      table.insert(cards, label)
+    end
+    local list = column.title .. ":"
+    if #cards > 0 then list = list .. " " .. table.concat(cards, ", ") end
+    table.insert(lists, list)
+  end
+  return table.concat(lists, " | ")
 end
 
 local page = table.concat({
@@ -24,121 +46,107 @@ local page = table.concat({
   "title: Board",
   "## not a column, frontmatter",
   "---",
-  "",
   "${kanban.board()}",
   "",
   "## Ideas",
   "",
-  "- [ ] First idea",
-  "- [ ] Second idea with a [link](https://example.com)",
+  "- [ ] one",
+  "- [ ] two",
   "",
   "## Doing",
   "",
-  "- [ ] Working on [[Some Page]]",
-  "\t- A sub-item",
-  "    - Another, indented with spaces",
+  "- [ ] three [[Some Page]]",
+  "\t- tab-indented",
+  "    - space-indented",
   "",
   "## Empty",
   "",
   "## Done",
   "",
-  "- [x] Finished",
-  "Loose text ends a card",
-  "\t- not part of any card",
+  "- [x] four",
+  "loose text",
+  "\t- not part of a card",
   "",
   "# Notes",
   "",
-  "- [ ] Not on the board",
+  "- [ ] not on the board",
 }, "\n")
 
-local board = kanban.parse(page)
-check("columns from ## sections only", #board.columns == 4)
-check("column titles", board.columns[1].title == "Ideas" and board.columns[4].title == "Done")
-check("cards per column", #board.columns[1].cards == 2 and #board.columns[2].cards == 1
-  and #board.columns[3].cards == 0 and #board.columns[4].cards == 1)
-local doing = board.columns[2].cards[1]
-check("card label", doing.label == "Working on [[Some Page]]")
-check("indented lines belong to the card, dedented", #doing.body == 2
-  and doing.body[1] == "- A sub-item" and doing.body[2] == "- Another, indented with spaces")
-check("done state", board.columns[4].cards[1].done and not board.columns[1].cards[1].done)
-check("loose text ends a card", #board.columns[4].cards[1].body == 0)
+-- Reading a board
 
-local moved = kanban.moved(page, 2, 1, 3)
-local after = kanban.parse(moved)
-check("move into an empty column", #after.columns[2].cards == 0 and #after.columns[3].cards == 1
-  and #after.columns[3].cards[1].body == 2)
-check("blank line kept before the next heading", moved:find("Another, indented with spaces\n\n## Done", 1, true) ~= nil)
-check("move keeps every line", sortedLines(moved) == sortedLines(page))
+check("lists from ## sections, cards from top-level tasks",
+  outline(page), "Ideas: one, two | Doing: three [[Some Page]]+2 | Empty: | Done: [x] four")
+check("sub-items lose one level of indent",
+  table.concat(kanban.parse(page).columns[2].cards[1].body, "\n"), "- tab-indented\n- space-indented")
 
-local back = kanban.moved(moved, 3, 1, 2)
-check("move back restores the page", back == page)
+-- Cards
 
-local appended = kanban.parse(kanban.moved(page, 1, 1, 4))
-check("move to the end of a column", #appended.columns[4].cards == 2
-  and appended.columns[4].cards[2].label == "First idea")
+check("move a card to another list's end",
+  outline(kanban.moved(page, 1, 1, 4)), "Ideas: two | Doing: three [[Some Page]]+2 | Empty: | Done: [x] four, one")
+check("move a card into an empty list, with its sub-items",
+  outline(kanban.moved(page, 2, 1, 3)), "Ideas: one, two | Doing: | Empty: three [[Some Page]]+2 | Done: [x] four")
+check("move a card between two others",
+  outline(kanban.moved(page, 2, 1, 1, 2)), "Ideas: one, three [[Some Page]]+2, two | Doing: | Empty: | Done: [x] four")
+check("move a card to the top of its list",
+  outline(kanban.moved(page, 1, 2, 1, 1)), "Ideas: two, one | Doing: three [[Some Page]]+2 | Empty: | Done: [x] four")
+check("move a card to the end of its list",
+  outline(kanban.moved(page, 1, 1, 1)), "Ideas: two, one | Doing: three [[Some Page]]+2 | Empty: | Done: [x] four")
+check("moving a card back restores the page",
+  kanban.moved(kanban.moved(page, 2, 1, 3), 3, 1, 2), page)
 
-local toggled = kanban.toggled(page, 1, 2)
-check("toggle checks a card", kanban.parse(toggled).columns[1].cards[2].done)
-check("toggle twice restores the page", kanban.toggled(toggled, 1, 2) == page)
+check("check a card",
+  outline(kanban.toggled(page, 1, 2)), "Ideas: one, [x] two | Doing: three [[Some Page]]+2 | Empty: | Done: [x] four")
+check("checking twice restores the page",
+  kanban.toggled(kanban.toggled(page, 1, 2), 1, 2), page)
 
-check("named columns start folded", kanban.startsFolded({ "Ideas", "Done" }, "Done"))
-check("other columns start unfolded", not kanban.startsFolded({ "Ideas" }, "Doing"))
-check("no folded list folds nothing", not kanban.startsFolded(nil, "Doing"))
-check("a single title folds", kanban.startsFolded("Doing", "Doing") and not kanban.startsFolded("Doing", "Ideas"))
-check("anything else folds nothing", not kanban.startsFolded(true, "Doing"))
+check("add a card at a list's end",
+  outline(kanban.added(page, 1, "new")), "Ideas: one, two, new | Doing: three [[Some Page]]+2 | Empty: | Done: [x] four")
 
-local top = kanban.moved(page, 1, 2, 1, 1)
-check("move to the top of a column", kanban.parse(top).columns[1].cards[1].label:find("Second idea", 1, true) ~= nil)
-check("move to the top keeps every line", sortedLines(top) == sortedLines(page))
-check("move to a column's end by default", kanban.parse(kanban.moved(top, 1, 1, 1)) .columns[1].cards[2].label:find("Second idea", 1, true) ~= nil)
-local between = kanban.parse(kanban.moved(page, 2, 1, 1, 2)).columns[1].cards
-check("move between cards, with its sub-items", #between == 3 and between[2].label == "Working on [[Some Page]]"
-  and #between[2].body == 2 and between[3].label:find("Second idea", 1, true) ~= nil)
+check("edit a card, keeping its mark",
+  outline(kanban.edited(page, 4, 1, "renamed")), "Ideas: one, two | Doing: three [[Some Page]]+2 | Empty: | Done: [x] renamed")
+check("edit a card, keeping its sub-items",
+  outline(kanban.edited(page, 2, 1, "renamed")), "Ideas: one, two | Doing: renamed+2 | Empty: | Done: [x] four")
+check("edit a card to a label with pattern characters",
+  outline(kanban.edited(page, 1, 1, "100% %1 [x]")), "Ideas: 100% %1 [x], two | Doing: three [[Some Page]]+2 | Empty: | Done: [x] four")
 
-local added = kanban.parse(kanban.added(page, 1, "New")).columns[1].cards
-check("add at a column's end", #added == 3 and added[3].label == "New" and not added[3].done)
-local inserted = kanban.parse(kanban.added(page, 1, "New", 1)).columns[1].cards
-check("add at a position", inserted[1].label == "New" and inserted[2].label == "First idea")
-local into = kanban.added(page, 3, "New")
-check("add to an empty column", kanban.parse(into).columns[3].cards[1].label == "New"
-  and into:find("## Empty\n\n- [ ] New\n\n## Done", 1, true) ~= nil)
+-- Lists
 
-local edited = kanban.parse(kanban.edited(page, 4, 1, "Renamed")).columns[4].cards[1]
-check("edit keeps the mark", edited.label == "Renamed" and edited.done)
-local editedBody = kanban.parse(kanban.edited(page, 2, 1, "Renamed")).columns[2].cards[1]
-check("edit keeps the sub-items", #editedBody.body == 2)
-check("edit keeps odd characters", kanban.parse(kanban.edited(page, 1, 1, "100% %1 [x]")).columns[1].cards[1].label == "100% %1 [x]")
+check("move a list",
+  outline(kanban.columnMoved(page, 1, 3)), "Doing: three [[Some Page]]+2 | Empty: | Ideas: one, two | Done: [x] four")
+check("moving a list back restores the page",
+  kanban.columnMoved(kanban.columnMoved(page, 1, 3), 3, 1), page)
+check("add a list before another",
+  outline(kanban.columnAdded(page, "New", 2)), "Ideas: one, two | New: | Doing: three [[Some Page]]+2 | Empty: | Done: [x] four")
+check("rename a list",
+  outline(kanban.columnRenamed(page, 1, "Later")), "Later: one, two | Doing: three [[Some Page]]+2 | Empty: | Done: [x] four")
+local withoutDone = kanban.columnRemoved(page, 4)
+check("delete a list",
+  outline(withoutDone), "Ideas: one, two | Doing: three [[Some Page]]+2 | Empty:")
+local tail = "## Empty\n\n# Notes\n\n- [ ] not on the board"
+check("deleting a list takes its loose text and keeps what follows the board",
+  withoutDone:sub(-#tail), tail)
 
-local copies = kanban.parse(kanban.duplicated(page, 2, 1)).columns[2].cards
-check("duplicate comes right after, with its sub-items", #copies == 2 and copies[2].label == copies[1].label and #copies[2].body == 2)
-local removed = kanban.removed(page, 2, 1)
-check("delete a card and its sub-items", #kanban.parse(removed).columns[2].cards == 0
-  and not removed:find("A sub-item", 1, true))
+-- Blank lines and what follows the board
 
-local reordered = kanban.columnMoved(page, 1, 3)
-local titles = kanban.parse(reordered).columns
-check("move a column", titles[1].title == "Doing" and titles[2].title == "Empty" and titles[3].title == "Ideas" and titles[4].title == "Done")
-check("a moved column keeps its cards", #titles[3].cards == 2)
-check("moving a column keeps every line", sortedLines(reordered) == sortedLines(page))
-check("move a column back restores the page", kanban.columnMoved(reordered, 3, 1) == page)
-local toEnd = kanban.columnMoved(page, 2, 4)
-local ends = kanban.parse(toEnd).columns
-check("move a column to the end stays above what follows the board", ends[4].title == "Doing"
-  and toEnd:find("Another, indented with spaces\n\n# Notes", 1, true) ~= nil and #ends[4].cards == 1)
-check("that keeps every line", sortedLines(toEnd) == sortedLines(page))
-check("what follows the board stays off it", not toEnd:find("# Notes\n\n## ", 1, true))
+local small = "## A\n\n- [ ] a\n\t- sub\n\n## B\n\n# Notes"
+check("move a card into an empty list, above what follows",
+  kanban.moved(small, 1, 1, 2), "## A\n\n## B\n\n- [ ] a\n\t- sub\n\n# Notes")
+check("add a card to an empty list, above what follows",
+  kanban.added(small, 2, "b"), "## A\n\n- [ ] a\n\t- sub\n\n## B\n\n- [ ] b\n\n# Notes")
+check("delete a card and its sub-items",
+  kanban.removed(small, 1, 1), "## A\n\n## B\n\n# Notes")
+check("move a list to the end, above what follows",
+  kanban.columnMoved(small, 1, 2), "## B\n\n## A\n\n- [ ] a\n\t- sub\n\n# Notes")
+check("add a list at the end, above what follows",
+  kanban.columnAdded(small, "C"), "## A\n\n- [ ] a\n\t- sub\n\n## B\n\n## C\n\n# Notes")
+check("move the last list first, at the page's end",
+  kanban.columnMoved("## A\n\n- [ ] a\n\n## B\n\n- [ ] b", 2, 1), "## B\n\n- [ ] b\n\n## A\n\n- [ ] a\n")
 
-local plain = "## A\n\n- [ ] a\n\n## B\n\n- [ ] b"
-check("move the last column first at the page's end", kanban.columnMoved(plain, 2, 1) == "## B\n\n- [ ] b\n\n## A\n\n- [ ] a\n")
+-- Folding
 
-local lists = kanban.parse(kanban.columnAdded(page, "New", 2)).columns
-check("add a column before another", #lists == 5 and lists[2].title == "New" and lists[3].title == "Doing")
-local appendedList = kanban.columnAdded(page, "New")
-check("add a column after the last, above what follows", appendedList:find("## New\n\n# Notes", 1, true) ~= nil)
-check("rename a column", kanban.parse(kanban.columnRenamed(page, 1, "Later")).columns[1].title == "Later")
-local noLoose = kanban.columnRemoved(page, 4)
-check("delete a column with its section", #kanban.parse(noLoose).columns == 3
-  and not noLoose:find("Loose text", 1, true) and noLoose:find("# Notes", 1, true) ~= nil)
+check("a named list starts folded", kanban.startsFolded({ "Ideas", "Done" }, "Done"), true)
+check("other lists start unfolded", kanban.startsFolded({ "Ideas" }, "Doing"), false)
+check("no titles fold nothing", kanban.startsFolded(nil, "Doing"), false)
 
 if failures > 0 then
   print(failures .. " failed")
